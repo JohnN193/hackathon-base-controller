@@ -1,4 +1,4 @@
-# Model cjnj193:base-gamepad-controller:dog-controller
+# Model cjnj193:dog-gamepad:dog-controller
 
 A gamepad controller service for a base using the `funBaseControl` mode. The left joystick drives linear motion (X/Y), the right joystick drives angular motion (Z/X). Any button or axis can additionally be mapped to an arbitrary `DoCommand` call on the base via `fun_commands`.
 

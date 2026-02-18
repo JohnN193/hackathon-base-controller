@@ -20,7 +20,7 @@ import (
 	"go.viam.com/rdk/session"
 )
 
-var DogController = resource.NewModel("cjnj193", "base-gamepad-controller", "dog-controller")
+var DogController = resource.NewModel("cjnj193", "dog-gamepad", "dog-controller")
 
 func init() {
 	resource.RegisterService(generic.API, DogController,

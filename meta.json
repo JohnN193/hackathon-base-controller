@@ -1,9 +1,16 @@
 {
   "$schema": "https://dl.viam.dev/module.schema.json",
-  "module_id": "cjnj193:base-gamepad-controller",
+  "module_id": "cjnj193:dog-gamepad",
   "visibility": "public",
-  "url": "",
+  "url": "https://github.com/JohnN193/hackathon-base-controller",
   "description": "Modular generic service: dog-controller",
+  "models": [
+    {
+      "api": "rdk:service:generic",
+      "model": "cjnj193:dog-gamepad:dog-controller",
+      "markdown_link": "cjnj193_base-gamepad-controller_dog-controller.md"
+    }
+  ],
   "applications": null,
   "markdown_link": "README.md",
   "entrypoint": "bin/base-gamepad-controller",
