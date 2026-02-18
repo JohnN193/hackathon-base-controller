@@ -1,47 +1,92 @@
 # Model cjnj193:base-gamepad-controller:dog-controller
 
-Provide a description of the model and any relevant information.
+A gamepad controller service for a base using the `funBaseControl` mode. The left joystick drives linear motion (X/Y), the right joystick drives angular motion (Z/X). Any button or axis can additionally be mapped to an arbitrary `DoCommand` call on the base via `fun_commands`.
 
 ## Configuration
-The following attribute template can be used to configure this model:
 
 ```json
 {
-"attribute_1": <float>,
-"attribute_2": <string>
+  "base": "<base-name>",
+  "input_controller": "<input-controller-name>",
+  "max_linear_mm_per_sec": 300.0,
+  "max_angular_deg_per_sec": 90.0,
+  "dead_zone": 0.27,
+  "denoise_threshold": 0.05,
+  "fun_commands": {
+    "ButtonSouth": {
+      "cmd": "sit",
+      "input": null,
+      "event_type": "ButtonPress"
+    },
+    "ButtonNorth": {
+      "cmd": "stand",
+      "input": null,
+      "event_type": "ButtonPress"
+    }
+  }
 }
 ```
 
 ### Attributes
 
-The following attributes are available for this model:
+| Name | Type | Inclusion | Description |
+|------|------|-----------|-------------|
+| `base` | string | Required | Name of the base component to control |
+| `input_controller` | string | Required | Name of the input controller (gamepad) component |
+| `max_linear_mm_per_sec` | float | Optional | Maximum linear velocity in mm/s. If set (with `max_angular_deg_per_sec`), uses `SetVelocity`; otherwise uses `SetPower` (0–1 range) |
+| `max_angular_deg_per_sec` | float | Optional | Maximum angular velocity in deg/s. Must be set together with `max_linear_mm_per_sec` |
+| `fun_commands` | object | Optional | Map of input control names to `DoCommand` calls forwarded to the base |
+| `dead_zone` | float | Optional | Joystick axis values at or below this magnitude are treated as zero. Default: `0.27` |
+| `denoise_threshold` | float | Optional | Minimum change in linear or angular value required to send a new command to the base. Default: `0.05` |
 
-| Name          | Type   | Inclusion | Description                |
-|---------------|--------|-----------|----------------------------|
-| `attribute_1` | float  | Required  | Description of attribute 1 |
-| `attribute_2` | string | Optional  | Description of attribute 2 |
+#### `fun_commands` entry fields
 
-### Example Configuration
+| Name | Type | Inclusion | Description |
+|------|------|-----------|-------------|
+| `cmd` | string | Required | The command key passed to the base's `DoCommand` |
+| `input` | any | Optional | The value associated with the command key |
+| `event_type` | string | Optional | Which event triggers the command. Defaults to `ButtonPress`. One of: `ButtonPress`, `ButtonRelease`, `ButtonHold`, `ButtonChange`, `PositionChangeAbs`, `PositionChangeRel` |
 
-```json
-{
-  "attribute_1": 1.0,
-  "attribute_2": "foo"
-}
-```
+#### Valid `fun_commands` keys (input controls)
+
+Button controls: `ButtonSouth`, `ButtonEast`, `ButtonWest`, `ButtonNorth`, `ButtonLT`, `ButtonRT`, `ButtonLT2`, `ButtonRT2`, `ButtonLThumb`, `ButtonRThumb`, `ButtonSelect`, `ButtonStart`, `ButtonMenu`, `ButtonRecord`, `ButtonEStop`
+
+Axis controls: `AbsoluteZ`, `AbsoluteRZ`, `AbsoluteHat0X`, `AbsoluteHat0Y`, `AbsolutePedalAccelerator`, `AbsolutePedalBrake`, `AbsolutePedalClutch`
+
+> Note: `AbsoluteX`, `AbsoluteY`, `AbsoluteRX`, and `AbsoluteRY` are reserved for driving the base and cannot be used as `fun_commands` keys.
+
+### Joystick Mapping
+
+| Axis | Action |
+|------|--------|
+| Left stick X (`AbsoluteX`) | Linear X |
+| Left stick Y (`AbsoluteY`) | Linear Y |
+| Right stick X (`AbsoluteRX`) | Angular Z (yaw) |
+| Right stick Y (`AbsoluteRY`) | Angular X (pitch) |
+
+Inputs within the dead zone (default ±0.27, configurable via `dead_zone`) are treated as zero. Values are rounded to one decimal place.
 
 ## DoCommand
 
-If your model implements DoCommand, provide an example payload of each command that is supported and the arguments that can be used. If your model does not implement DoCommand, remove this section.
+### `get_controller_inputs`
 
-### Example DoCommand
+Returns the list of input controls currently being monitored by the service — always includes the four joystick axes plus any controls configured in `fun_commands`.
 
+**Request:**
 ```json
-{
-  "command_name": {
-    "arg1": "foo",
-    "arg2": 1
-  }
-}
+{ "get_controller_inputs": {} }
 ```
 
+**Response:**
+```json
+{
+  "controller_inputs": [
+    "AbsoluteX",
+    "AbsoluteY",
+    "AbsoluteRX",
+    "AbsoluteRY",
+    "ButtonSouth",
+    "ButtonNorth"
+  ]
+}
+```

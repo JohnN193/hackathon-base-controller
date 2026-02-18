@@ -44,6 +44,22 @@ type Config struct {
 	MaxAngularVelocity  float64               `json:"max_angular_deg_per_sec,omitempty"`
 	MaxLinearVelocity   float64               `json:"max_linear_mm_per_sec,omitempty"`
 	FunCommands         map[string]FunCommand `json:"fun_commands,omitempty"`
+	DeadZone            float64               `json:"dead_zone,omitempty"`
+	DenoiseThreshold    float64               `json:"denoise_threshold,omitempty"`
+}
+
+func (cfg *Config) deadZone() float64 {
+	if cfg.DeadZone > 0 {
+		return cfg.DeadZone
+	}
+	return 0.27
+}
+
+func (cfg *Config) denoiseThreshold() float64 {
+	if cfg.DenoiseThreshold > 0 {
+		return cfg.DenoiseThreshold
+	}
+	return 0.05
 }
 
 // Validate ensures all parts of the config are valid and returns implicit dependencies.
@@ -358,7 +374,7 @@ func (s *baseGamepadControllerDogController) processEvent(ctx context.Context, s
 
 	switch event.Control {
 	case input.AbsoluteX, input.AbsoluteY, input.AbsoluteRX, input.AbsoluteRY:
-		newLinear, newAngular = funBaseEvent(event, state.linearThrottle, state.angularThrottle)
+		newLinear, newAngular = funBaseEvent(event, state.linearThrottle, state.angularThrottle, s.cfg.deadZone())
 	case input.AbsoluteHat0X, input.AbsoluteHat0Y, input.AbsoluteRZ, input.AbsoluteZ, input.ButtonEStop,
 		input.ButtonEast, input.ButtonLT, input.ButtonLT2, input.ButtonLThumb, input.ButtonMenu, input.ButtonNorth,
 		input.ButtonRT, input.ButtonRT2, input.ButtonRThumb, input.ButtonRecord, input.ButtonSelect,
@@ -394,7 +410,7 @@ func (s *baseGamepadControllerDogController) processEvent(ctx context.Context, s
 	state.angularThrottle = newAngular
 	state.mu.Unlock()
 
-	if similar(newLinear, oldLinear, .05) && similar(newAngular, oldAngular, .05) && len(s.funCmdQueue) == 0 {
+	if similar(newLinear, oldLinear, s.cfg.denoiseThreshold()) && similar(newAngular, oldAngular, s.cfg.denoiseThreshold()) && len(s.funCmdQueue) == 0 {
 		s.logger.Debugw("skipping event signal, no changes", "control", event.Control)
 		return
 	}
@@ -411,16 +427,16 @@ func (s *baseGamepadControllerDogController) processEvent(ctx context.Context, s
 
 // funBaseEvent maps joystick axes to linear/angular vectors.
 // Left stick (AbsoluteX/Y) → linear X/Y; right stick (AbsoluteRX/RY) → angular Z/X.
-func funBaseEvent(event input.Event, linear, angular r3.Vector) (r3.Vector, r3.Vector) {
+func funBaseEvent(event input.Event, linear, angular r3.Vector, deadZone float64) (r3.Vector, r3.Vector) {
 	switch event.Control {
 	case input.AbsoluteX:
-		linear.X = scaleThrottle(-1.0 * event.Value)
+		linear.X = scaleThrottle(-1.0*event.Value, deadZone)
 	case input.AbsoluteY:
-		linear.Y = scaleThrottle(-1.0 * event.Value)
+		linear.Y = scaleThrottle(-1.0*event.Value, deadZone)
 	case input.AbsoluteRX:
-		angular.Z = scaleThrottle(-1.0 * event.Value)
+		angular.Z = scaleThrottle(-1.0*event.Value, deadZone)
 	case input.AbsoluteRY:
-		angular.X = scaleThrottle(-1.0 * event.Value)
+		angular.X = scaleThrottle(-1.0*event.Value, deadZone)
 	default:
 	}
 	return linear, angular
@@ -432,10 +448,10 @@ func similar(a, b r3.Vector, deltaThreshold float64) bool {
 		math.Abs(a.Z-b.Z) <= deltaThreshold
 }
 
-func scaleThrottle(a float64) float64 {
+func scaleThrottle(a, deadZone float64) float64 {
 	neg := a < 0
 	a = math.Abs(a)
-	if a <= .27 {
+	if a <= deadZone {
 		return 0
 	}
 	a = math.Ceil(a*10) / 10.0
@@ -453,7 +469,21 @@ type throttleState struct {
 func (ts *throttleState) init() {}
 
 func (s *baseGamepadControllerDogController) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
-	return nil, errors.New("DoCommand not implemented")
+	resp := map[string]interface{}{}
+	for key := range cmd {
+		switch key {
+		case "get_controller_inputs":
+			controls := s.controllerInputs()
+			names := make([]string, len(controls))
+			for i, c := range controls {
+				names[i] = string(c)
+			}
+			resp["controller_inputs"] = names
+		default:
+			return nil, errors.Errorf("unknown command: %s", key)
+		}
+	}
+	return resp, nil
 }
 
 func (s *baseGamepadControllerDogController) Close(_ context.Context) error {
