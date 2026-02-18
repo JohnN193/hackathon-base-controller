@@ -1,0 +1,13 @@
+{
+  "module_name": "base-gamepad-controller",
+  "visibility": "public",
+  "namespace": "cjnj193",
+  "language": "go",
+  "resource_type": "service",
+  "resource_subtype": "generic",
+  "model_name": "dog-controller",
+  "initialize_git": false,
+  "generator_version": "0.1.0",
+  "generated_on": "2026-02-17T19:03:56.209279465Z",
+  "module_readme_link": "README.md"
+}
