@@ -1,12 +1,12 @@
 
 GO_BUILD_ENV :=
 GO_BUILD_FLAGS :=
-MODULE_BINARY := bin/base-gamepad-controller
+MODULE_BINARY := bin/dog-gamepad
 
 ifeq ($(VIAM_TARGET_OS), windows)
 	GO_BUILD_ENV += GOOS=windows GOARCH=amd64
 	GO_BUILD_FLAGS := -tags no_cgo
-	MODULE_BINARY = bin/base-gamepad-controller.exe
+	MODULE_BINARY = bin/dog-gamepad.exe
 endif
 
 $(MODULE_BINARY): Makefile go.mod *.go cmd/module/*.go 

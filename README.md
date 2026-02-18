@@ -1,4 +1,4 @@
-# Module base-gamepad-controller 
+# Module dog-gamepad 
 
 Provide a description of the purpose of the module and any relevant information.
 
@@ -6,4 +6,4 @@ Provide a description of the purpose of the module and any relevant information.
 
 This module provides the following model(s):
 
-- [`cjnj193:base-gamepad-controller:dog-controller`](cjnj193_base-gamepad-controller_dog-controller.md) - Provide a brief description of the model
+- [`cjnj193:dog-gamepad:dog-controller`](cjnj193_dog-gamepad_dog-controller.md) - Provide a brief description of the model

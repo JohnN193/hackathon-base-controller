@@ -8,12 +8,12 @@
     {
       "api": "rdk:service:generic",
       "model": "cjnj193:dog-gamepad:dog-controller",
-      "markdown_link": "cjnj193_base-gamepad-controller_dog-controller.md"
+      "markdown_link": "cjnj193_dog-gamepad_dog-controller.md"
     }
   ],
   "applications": null,
   "markdown_link": "README.md",
-  "entrypoint": "bin/base-gamepad-controller",
+  "entrypoint": "bin/dog-gamepad",
   "first_run": "",
   "build": {
     "build": "make module.tar.gz",
