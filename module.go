@@ -38,6 +38,7 @@ type FunCommand struct {
 	DoCommandInput interface{} `json:"input,omitempty"`
 	EventType      string      `json:"event_type,omitempty"`
 	ValueScale     float64     `json:"value_scale,omitempty"`
+	SkipZero       bool        `json:"skip_zero,omitempty"`
 }
 
 // Config describes how to configure the service.
@@ -401,6 +402,8 @@ func (s *baseGamepadControllerDogController) processEvent(ctx context.Context, s
 			}
 			if event.Event != expectedEventType {
 				s.logger.Debugw("fun command event type mismatch", "control", event.Control, "expected", expectedEventType, "got", event.Event)
+			} else if funCmd.SkipZero && event.Value == 0 {
+				s.logger.Debugw("skipping zero-value fun command event", "control", event.Control)
 			} else {
 				scale := funCmd.ValueScale
 				if scale == 0 {
