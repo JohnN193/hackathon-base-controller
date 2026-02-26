@@ -31,10 +31,13 @@ func init() {
 }
 
 // FunCommand describes a DoCommand call to issue on the base when a particular input event fires.
+// If DoCommandInput is the string "$value", it will be replaced with the event's value multiplied
+// by ValueScale (default 1.0) at dispatch time.
 type FunCommand struct {
 	Command        string      `json:"cmd,omitempty"`
 	DoCommandInput interface{} `json:"input,omitempty"`
 	EventType      string      `json:"event_type,omitempty"`
+	ValueScale     float64     `json:"value_scale,omitempty"`
 }
 
 // Config describes how to configure the service.
@@ -87,9 +90,11 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 		input.ButtonRecord: true, input.ButtonEStop: true,
 		input.AbsolutePedalAccelerator: true, input.AbsolutePedalBrake: true, input.AbsolutePedalClutch: true,
 	}
-	validEventTypes := map[input.EventType]bool{
+	validButtonEventTypes := map[input.EventType]bool{
 		input.ButtonPress: true, input.ButtonRelease: true,
 		input.ButtonHold: true, input.ButtonChange: true,
+	}
+	validAbsoluteEventTypes := map[input.EventType]bool{
 		input.PositionChangeAbs: true, input.PositionChangeRel: true,
 	}
 	for k, fc := range cfg.FunCommands {
@@ -97,9 +102,16 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 			return nil, nil, resource.NewConfigValidationError(path,
 				errors.Errorf("fun_commands key '%s' is not a valid input control", k))
 		}
-		if fc.EventType != "" && !validEventTypes[input.EventType(fc.EventType)] {
-			return nil, nil, resource.NewConfigValidationError(path,
-				errors.Errorf("fun_commands key '%s' has invalid event_type '%s'", k, fc.EventType))
+		if fc.EventType != "" {
+			isButton := strings.HasPrefix(k, "Button")
+			if isButton && !validButtonEventTypes[input.EventType(fc.EventType)] {
+				return nil, nil, resource.NewConfigValidationError(path,
+					errors.Errorf("fun_commands key '%s' has invalid event_type '%s' for a button control", k, fc.EventType))
+			}
+			if !isButton && !validAbsoluteEventTypes[input.EventType(fc.EventType)] {
+				return nil, nil, resource.NewConfigValidationError(path,
+					errors.Errorf("fun_commands key '%s' has invalid event_type '%s' for an absolute control", k, fc.EventType))
+			}
 		}
 	}
 
@@ -385,13 +397,18 @@ func (s *baseGamepadControllerDogController) processEvent(ctx context.Context, s
 		if funCmd, ok := s.cfg.FunCommands[string(event.Control)]; ok {
 			expectedEventType := input.EventType(funCmd.EventType)
 			if expectedEventType == "" {
-				expectedEventType = input.ButtonPress
+				expectedEventType = defaultEventType(event.Control)
 			}
 			if event.Event != expectedEventType {
 				s.logger.Debugw("fun command event type mismatch", "control", event.Control, "expected", expectedEventType, "got", event.Event)
 			} else {
+				scale := funCmd.ValueScale
+				if scale == 0 {
+					scale = 1.0
+				}
+				cmdInput := substituteValue(funCmd.DoCommandInput, event.Value*scale)
 				select {
-				case s.funCmdQueue <- map[string]interface{}{funCmd.Command: funCmd.DoCommandInput}:
+				case s.funCmdQueue <- map[string]interface{}{funCmd.Command: cmdInput}:
 				default:
 					s.logger.Warnw("fun command queue full, dropping command")
 				}
@@ -421,6 +438,41 @@ func (s *baseGamepadControllerDogController) processEvent(ctx context.Context, s
 	}
 
 	session.SafetyMonitor(ctx, s.base)
+}
+
+// substituteValue recursively walks input and replaces any string "$value" with value.
+// This allows "$value" to appear inside nested maps or slices in a fun_command's input field.
+func substituteValue(input interface{}, value float64) interface{} {
+	switch v := input.(type) {
+	case string:
+		if v == "$value" {
+			return value
+		}
+		return v
+	case map[string]interface{}:
+		out := make(map[string]interface{}, len(v))
+		for k, val := range v {
+			out[k] = substituteValue(val, value)
+		}
+		return out
+	case []interface{}:
+		out := make([]interface{}, len(v))
+		for i, val := range v {
+			out[i] = substituteValue(val, value)
+		}
+		return out
+	default:
+		return input
+	}
+}
+
+// defaultEventType returns the expected event type for a control based on its name prefix.
+// Button controls default to ButtonPress; absolute controls default to PositionChangeAbs.
+func defaultEventType(control input.Control) input.EventType {
+	if strings.HasPrefix(string(control), "Button") {
+		return input.ButtonPress
+	}
+	return input.PositionChangeAbs
 }
 
 // funBaseEvent maps joystick axes to linear/angular vectors.
