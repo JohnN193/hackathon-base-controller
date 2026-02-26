@@ -1,4 +1,4 @@
-# Model cjnj193:dog-coordinator:dog-tts-coodinator
+# Model cjnj193:dog-gamepad:dog-tts-coodinator
 
 A coordinator service that periodically captures camera frames, runs people detection, and speaks detected names aloud via an audio output component.
 

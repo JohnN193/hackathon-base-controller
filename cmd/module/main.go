@@ -9,5 +9,8 @@ import (
 
 func main() {
 	// ModularMain can take multiple APIModel arguments, if your module implements multiple models.
-	module.ModularMain(resource.APIModel{ generic.API, basegamepadcontroller.DogController})
+	module.ModularMain(
+		resource.APIModel{API: generic.API, Model: basegamepadcontroller.DogController},
+		resource.APIModel{API: generic.API, Model: basegamepadcontroller.DogTTSCoodinator},
+	)
 }

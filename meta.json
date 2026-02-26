@@ -12,8 +12,8 @@
     },
     {
       "api": "rdk:service:generic",
-      "model": "cjnj193:dog-coordinator:dog-tts-coodinator",
-      "markdown_link": "cjnj193_dog-coordinator_dog-tts-coodinator.md"
+      "model": "cjnj193:dog-gamepad:dog-tts-coodinator",
+      "markdown_link": "cjnj193_dog-gamepad_dog-tts-coodinator.md"
     }
   ],
   "applications": null,

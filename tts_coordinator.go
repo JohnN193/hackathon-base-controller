@@ -18,7 +18,7 @@ import (
 )
 
 var (
-	DogTTSCoodinator = resource.NewModel("cjnj193", "dog-coordinator", "dog-tts-coodinator")
+	DogTTSCoodinator = resource.NewModel("cjnj193", "dog-gamepad", "dog-tts-coodinator")
 	errUnimplemented = errors.New("unimplemented")
 )
 
