@@ -248,7 +248,9 @@ func (s *baseGamepadControllerDogController) registerCallbacks(ctx context.Conte
 		}
 	}
 
-	for _, control := range s.controllerInputs() {
+	inputs := s.controllerInputs()
+
+	for _, control := range inputs {
 		if err := func() error {
 			s.mu.RLock()
 			defer s.mu.RUnlock()
@@ -350,7 +352,6 @@ func (s *baseGamepadControllerDogController) eventProcessor() {
 
 			select {
 			case cmd := <-s.funCmdQueue:
-				s.logger.Infow("executing fun command from queue", "cmd", cmd)
 				s.mu.RLock()
 				if _, err := s.base.DoCommand(s.cancelCtx, cmd); err != nil {
 					s.logger.Errorw("error executing fun command", "error", err)
@@ -376,11 +377,11 @@ func (s *baseGamepadControllerDogController) processEvent(ctx context.Context, s
 	case input.AbsoluteX, input.AbsoluteY, input.AbsoluteRX, input.AbsoluteRY:
 		newLinear, newAngular = funBaseEvent(event, state.linearThrottle, state.angularThrottle, s.cfg.deadZone())
 	case input.AbsoluteHat0X, input.AbsoluteHat0Y, input.AbsoluteRZ, input.AbsoluteZ, input.ButtonEStop,
-		input.ButtonEast, input.ButtonLT, input.ButtonLT2, input.ButtonLThumb, input.ButtonMenu, input.ButtonNorth,
+		input.ButtonLT, input.ButtonLT2, input.ButtonLThumb, input.ButtonMenu,
+		input.ButtonNorth, input.ButtonSouth, input.ButtonEast, input.ButtonWest,
 		input.ButtonRT, input.ButtonRT2, input.ButtonRThumb, input.ButtonRecord, input.ButtonSelect,
-		input.ButtonSouth, input.ButtonStart, input.ButtonWest, input.AbsolutePedalAccelerator,
+		input.ButtonStart, input.AbsolutePedalAccelerator,
 		input.AbsolutePedalBrake, input.AbsolutePedalClutch:
-		s.logger.Infow("fun control event", "control", event.Control, "value", event.Value)
 		if funCmd, ok := s.cfg.FunCommands[string(event.Control)]; ok {
 			expectedEventType := input.EventType(funCmd.EventType)
 			if expectedEventType == "" {
@@ -389,16 +390,13 @@ func (s *baseGamepadControllerDogController) processEvent(ctx context.Context, s
 			if event.Event != expectedEventType {
 				s.logger.Debugw("fun command event type mismatch", "control", event.Control, "expected", expectedEventType, "got", event.Event)
 			} else {
-				s.logger.Infow("enqueueing fun command", "cmd", funCmd.Command, "input", funCmd.DoCommandInput)
 				select {
 				case s.funCmdQueue <- map[string]interface{}{funCmd.Command: funCmd.DoCommandInput}:
-					s.logger.Infow("fun command enqueued")
 				default:
 					s.logger.Warnw("fun command queue full, dropping command")
 				}
 			}
 		} else {
-			s.logger.Debugw("no fun command configured for control", "control", event.Control)
 		}
 		fallthrough
 	default:
