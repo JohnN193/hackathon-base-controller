@@ -15,13 +15,16 @@ A gamepad controller service for a base using the `funBaseControl` mode. The lef
   "fun_commands": {
     "ButtonSouth": {
       "cmd": "sit",
-      "input": null,
-      "event_type": "ButtonPress"
+      "input": null
     },
-    "ButtonNorth": {
-      "cmd": "stand",
-      "input": null,
-      "event_type": "ButtonPress"
+    "AbsoluteHat0Y": {
+      "cmd": "pose_delta",
+      "input": {
+        "roll_deg": "$value",
+        "pitch_deg": 0.0,
+        "yaw_deg": 0.0
+      },
+      "value_scale": 45.0
     }
   }
 }
@@ -44,8 +47,38 @@ A gamepad controller service for a base using the `funBaseControl` mode. The lef
 | Name | Type | Inclusion | Description |
 |------|------|-----------|-------------|
 | `cmd` | string | Required | The command key passed to the base's `DoCommand` |
-| `input` | any | Optional | The value associated with the command key |
-| `event_type` | string | Optional | Which event triggers the command. Defaults to `ButtonPress`. One of: `ButtonPress`, `ButtonRelease`, `ButtonHold`, `ButtonChange`, `PositionChangeAbs`, `PositionChangeRel` |
+| `input` | any | Optional | The value associated with the command key. Use the special string `"$value"` to forward the event's value (see below) |
+| `value_scale` | float | Optional | Multiplier applied to the event value when `input` is `"$value"`. Defaults to `1.0` |
+| `event_type` | string | Optional | Which event triggers the command. Defaults to `ButtonPress` for button controls and `PositionChangeAbs` for axis controls. Valid values depend on the control type (see below) |
+
+**`event_type` valid values by control type:**
+
+- Button controls (`Button*`): `ButtonPress`, `ButtonRelease`, `ButtonHold`, `ButtonChange`
+- Axis controls (`Absolute*`): `PositionChangeAbs`, `PositionChangeRel`
+
+Mismatched `event_type` values (e.g. `ButtonPress` on an axis control) are rejected at startup.
+
+**Using `"$value"` as input:**
+
+Setting `input` to the string `"$value"` (or placing `"$value"` anywhere inside a nested map/array) causes it to be replaced at dispatch time with `event.Value * value_scale`. All other values in the structure are passed through unchanged. This is useful for axis controls where the event value encodes direction and magnitude — for example, `AbsoluteHat0Y` produces `-1.0` (up) or `1.0` (down).
+
+Nested example — sending a pose delta on the hat Y axis:
+
+```json
+"AbsoluteHat0Y": {
+  "cmd": "pose_delta",
+  "input": {
+    "roll_deg": "$value",
+    "pitch_deg": 0.0,
+    "yaw_deg": 0.0
+  },
+  "value_scale": 45.0
+}
+```
+
+This calls `DoCommand({"pose_delta": {"roll_deg": ±45.0, "pitch_deg": 0.0, "yaw_deg": 0.0}})` depending on the direction pressed.
+
+> **Tip:** Before configuring `fun_commands`, check the  `input_controller` to confirm which controls your gamepad exposes, and test the inputs manually to verify the event values and directions you'll receive.
 
 #### Valid `fun_commands` keys (input controls)
 
