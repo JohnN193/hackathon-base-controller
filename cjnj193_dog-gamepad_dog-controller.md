@@ -18,9 +18,13 @@ A gamepad controller service for a base using the `funBaseControl` mode. The lef
       "input": null
     },
     "AbsoluteHat0Y": {
-      "cmd": "tilt",
-      "input": "$value",
-      "value_scale": 100.0
+      "cmd": "pose_delta",
+      "input": {
+        "roll_deg": "$value",
+        "pitch_deg": 0.0,
+        "yaw_deg": 0.0
+      },
+      "value_scale": 45.0
     }
   }
 }
@@ -56,7 +60,23 @@ Mismatched `event_type` values (e.g. `ButtonPress` on an axis control) are rejec
 
 **Using `"$value"` as input:**
 
-When `input` is set to `"$value"`, the actual event value is forwarded to the base's `DoCommand` instead of a static value. This is useful for axis controls where the value encodes direction and magnitude — for example, `AbsoluteHat0Y` produces `-1.0` (up) or `1.0` (down). Use `value_scale` to convert to the units your base expects.
+Setting `input` to the string `"$value"` (or placing `"$value"` anywhere inside a nested map/array) causes it to be replaced at dispatch time with `event.Value * value_scale`. All other values in the structure are passed through unchanged. This is useful for axis controls where the event value encodes direction and magnitude — for example, `AbsoluteHat0Y` produces `-1.0` (up) or `1.0` (down).
+
+Nested example — sending a pose delta on the hat Y axis:
+
+```json
+"AbsoluteHat0Y": {
+  "cmd": "pose_delta",
+  "input": {
+    "roll_deg": "$value",
+    "pitch_deg": 0.0,
+    "yaw_deg": 0.0
+  },
+  "value_scale": 45.0
+}
+```
+
+This calls `DoCommand({"pose_delta": {"roll_deg": ±45.0, "pitch_deg": 0.0, "yaw_deg": 0.0}})` depending on the direction pressed.
 
 > **Tip:** Before configuring `fun_commands`, check the  `input_controller` to confirm which controls your gamepad exposes, and test the inputs manually to verify the event values and directions you'll receive.
 
