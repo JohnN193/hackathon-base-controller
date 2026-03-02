@@ -42,59 +42,29 @@ type TTSCoordinatorConfig struct {
 	FilterMic string `json:"filter_mic"`
 }
 
+func requireDep(path, attr, val string, deps *[]string) error {
+	if val == "" {
+		return fmt.Errorf("%s: attribute '%s' (non-empty string) is required", path, attr)
+	}
+	*deps = append(*deps, val)
+	return nil
+}
+
 func (cfg *TTSCoordinatorConfig) Validate(path string) ([]string, []string, error) {
-	requiredDeps := []string{}
-	optionalDeps := []string{}
-
-	if cfg.Base == "" {
-		return nil, nil, fmt.Errorf(
-			"%s: attribute 'base' (non-empty string) is required",
-			path,
-		)
+	var deps []string
+	for _, entry := range []struct{ attr, val string }{
+		{"base", cfg.Base},
+		{"camera", cfg.Camera},
+		{"audio_out", cfg.AudioOut},
+		{"gesture", cfg.Gesture},
+		{"people", cfg.People},
+		{"filter-mic", cfg.FilterMic},
+	} {
+		if err := requireDep(path, entry.attr, entry.val, &deps); err != nil {
+			return nil, nil, err
+		}
 	}
-	requiredDeps = append(requiredDeps, cfg.Base)
-
-	if cfg.Camera == "" {
-		return nil, nil, fmt.Errorf(
-			"%s: attribute 'camera' (non-empty string) is required",
-			path,
-		)
-	}
-	requiredDeps = append(requiredDeps, cfg.Camera)
-
-	if cfg.AudioOut == "" {
-		return nil, nil, fmt.Errorf(
-			"%s: attribute 'audio_out' (non-empty string) is required",
-			path,
-		)
-	}
-	requiredDeps = append(requiredDeps, cfg.AudioOut)
-
-	if cfg.Gesture == "" {
-		return nil, nil, fmt.Errorf(
-			"%s: attribute 'gesture' (non-empty string) is required",
-			path,
-		)
-	}
-	requiredDeps = append(requiredDeps, cfg.Gesture)
-
-	if cfg.People == "" {
-		return nil, nil, fmt.Errorf(
-			"%s: attribute 'people' (non-empty string) is required",
-			path,
-		)
-	}
-	requiredDeps = append(requiredDeps, cfg.People)
-
-	if cfg.FilterMic == "" {
-		return nil, nil, fmt.Errorf(
-			"%s: attribute 'filter-mic' (non-empty string) is required",
-			path,
-		)
-	}
-	requiredDeps = append(requiredDeps, cfg.FilterMic)
-
-	return requiredDeps, optionalDeps, nil
+	return deps, nil, nil
 }
 
 type ttsCoodinatorService struct {
@@ -183,6 +153,52 @@ func NewTTSCoordinatorService(ctx context.Context, deps resource.Dependencies, n
 	return s, nil
 }
 
+// getCameraImage returns the first image from the camera.
+func (s *ttsCoodinatorService) getCameraImage(ctx context.Context) (image.Image, error) {
+	imgs, _, err := s.camera.Images(ctx, []string{}, nil)
+	if err != nil {
+		return nil, err
+	}
+	return imgs[0].Image(ctx)
+}
+
+// setPose sends a pose command to the base.
+func (s *ttsCoodinatorService) setPose(ctx context.Context, pitch, roll, yaw int) error {
+	_, err := s.base.DoCommand(ctx, map[string]interface{}{
+		"pose": map[string]interface{}{
+			"pitch_deg": pitch,
+			"roll_deg":  roll,
+			"yaw_deg":   yaw,
+		},
+	})
+	return err
+}
+
+// detectFirstPerson returns the label of the first detected person from the camera, or "" if none.
+func (s *ttsCoodinatorService) detectFirstPerson(ctx context.Context) (string, error) {
+	detections, err := s.peopleVis.DetectionsFromCamera(ctx, s.cfg.Camera, nil)
+	if err != nil {
+		return "", fmt.Errorf("error getting detections: %w", err)
+	}
+	if len(detections) > 0 {
+		return detections[0].Label(), nil
+	}
+	return "", nil
+}
+
+// detectAndGreet detects the first person in frame and greets them if they are known.
+// Returns true if someone was greeted.
+func (s *ttsCoodinatorService) detectAndGreet(ctx context.Context) (bool, error) {
+	who, err := s.detectFirstPerson(ctx)
+	if err != nil {
+		return false, err
+	}
+	if who != "" && who != "unknown" {
+		return true, s.sayWithGesture(ctx, who)
+	}
+	return false, nil
+}
+
 func (s *ttsCoodinatorService) control_thread(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -202,17 +218,13 @@ func (s *ttsCoodinatorService) control_thread(ctx context.Context) {
 				}
 			}
 
-			imgs, _, err := s.camera.Images(ctx, []string{}, nil)
+			img, err := s.getCameraImage(ctx)
 			if err != nil {
 				s.logger.Error(err)
 				continue
 			}
-			img, err := imgs[0].Image(ctx)
-			if err != nil {
-				s.logger.Error(err)
-				continue
-			}
-			detections, err := s.peopleVis.Detections(ctx, img, nil)
+
+			detections, _ := s.peopleVis.Detections(ctx, img, nil)
 			who := ""
 			if len(detections) > 0 {
 				who = detections[0].Label()
@@ -220,8 +232,7 @@ func (s *ttsCoodinatorService) control_thread(ctx context.Context) {
 
 			if who != "" && who != "unknown" {
 				if _, alreadySaid := recentNames[who]; !alreadySaid {
-					err := s.say(ctx, who)
-					if err != nil {
+					if err := s.say(ctx, who); err != nil {
 						s.logger.Error(err)
 						continue
 					}
@@ -239,7 +250,6 @@ func (s *ttsCoodinatorService) control_thread(ctx context.Context) {
 				}
 			}
 		}
-
 	}
 }
 
@@ -284,86 +294,33 @@ func (s *ttsCoodinatorService) say(ctx context.Context, name string) error {
 func (s *ttsCoodinatorService) findSomeone(ctx context.Context, name string) error {
 	spinIncrement := 15
 	spinCount := 360 / spinIncrement
+	poses := [][3]int{{-60, 0, 0}, {-60, 0, 15}, {-60, 0, 15}, {-60, 0, -15}}
+
+outer:
 	for {
-		err := s.base.Spin(ctx, float64(spinIncrement), 60, nil)
-		if err != nil {
+		if err := s.base.Spin(ctx, float64(spinIncrement), 60, nil); err != nil {
 			return fmt.Errorf("spin error: %w", err)
 		}
 
-		detections, err := s.peopleVis.DetectionsFromCamera(ctx, s.cfg.Camera, nil)
+		who, err := s.detectFirstPerson(ctx)
 		if err != nil {
-			return fmt.Errorf("error getting detections: %w", err)
-		}
-		var who string
-		if len(detections) > 0 {
-			who = detections[0].Label()
+			return err
 		}
 		if who == name {
 			break
 		}
 
-		_, err = s.base.DoCommand(ctx, map[string]interface{}{"pose": map[string]interface{}{"pitch_deg": -60, "roll_deg": 0, "yaw_deg": 0}})
-		if err != nil {
-			return fmt.Errorf("spin error: %w", err)
-		}
-
-		detections, err = s.peopleVis.DetectionsFromCamera(ctx, s.cfg.Camera, nil)
-		if err != nil {
-			return fmt.Errorf("error getting detections: %w", err)
-		}
-		if len(detections) > 0 {
-			who = detections[0].Label()
-		}
-		if who == name {
-			break
-		}
-
-		_, err = s.base.DoCommand(ctx, map[string]interface{}{"pose": map[string]interface{}{"pitch_deg": -60, "roll_deg": 0, "yaw_deg": 15}})
-		if err != nil {
-			return fmt.Errorf("spin error: %w", err)
-		}
-
-		detections, err = s.peopleVis.DetectionsFromCamera(ctx, s.cfg.Camera, nil)
-		if err != nil {
-			return fmt.Errorf("error getting detections: %w", err)
-		}
-		if len(detections) > 0 {
-			who = detections[0].Label()
-		}
-		if who == name {
-			break
-		}
-
-		_, err = s.base.DoCommand(ctx, map[string]interface{}{"pose": map[string]interface{}{"pitch_deg": -60, "roll_deg": 0, "yaw_deg": 15}})
-		if err != nil {
-			return fmt.Errorf("spin error: %w", err)
-		}
-
-		detections, err = s.peopleVis.DetectionsFromCamera(ctx, s.cfg.Camera, nil)
-		if err != nil {
-			return fmt.Errorf("error getting detections: %w", err)
-		}
-		if len(detections) > 0 {
-			who = detections[0].Label()
-		}
-		if who == name {
-			break
-		}
-
-		_, err = s.base.DoCommand(ctx, map[string]interface{}{"pose": map[string]interface{}{"pitch_deg": -60, "roll_deg": 0, "yaw_deg": -15}})
-		if err != nil {
-			return fmt.Errorf("spin error: %w", err)
-		}
-
-		detections, err = s.peopleVis.DetectionsFromCamera(ctx, s.cfg.Camera, nil)
-		if err != nil {
-			return fmt.Errorf("error getting detections: %w", err)
-		}
-		if len(detections) > 0 {
-			who = detections[0].Label()
-		}
-		if who == name {
-			break
+		for _, p := range poses {
+			if err := s.setPose(ctx, p[0], p[1], p[2]); err != nil {
+				return fmt.Errorf("pose error: %w", err)
+			}
+			who, err = s.detectFirstPerson(ctx)
+			if err != nil {
+				return err
+			}
+			if who == name {
+				break outer
+			}
 		}
 
 		spinCount--
@@ -377,78 +334,40 @@ func (s *ttsCoodinatorService) findSomeone(ctx context.Context, name string) err
 func (s *ttsCoodinatorService) greetFirstSeen(ctx context.Context) error {
 	spinIncrement := 30
 	spinCount := 360 / spinIncrement
+	poses := [][3]int{{-60, 0, 0}, {-60, 0, 20}, {-60, 0, -20}}
+
 	for {
 		s.logger.Infof("spin increment: %d ", spinIncrement)
-		err := s.base.Spin(ctx, float64(spinIncrement*2), 60, nil)
-		if err != nil {
+		if err := s.base.Spin(ctx, float64(spinIncrement*2), 60, nil); err != nil {
 			return fmt.Errorf("spin error: %w", err)
 		}
 		time.Sleep(2 * time.Second)
 
-		detections, err := s.peopleVis.DetectionsFromCamera(ctx, s.cfg.Camera, nil)
+		found, err := s.detectAndGreet(ctx)
 		if err != nil {
-			return fmt.Errorf("error getting detections: %w", err)
+			return err
 		}
-		if len(detections) > 0 {
-			who := detections[0].Label()
-			if who != "" && who != "unknown" {
-				return s.sayWithGesture(ctx, who)
+		if found {
+			return nil
+		}
+
+		for _, p := range poses {
+			if err := s.setPose(ctx, p[0], p[1], p[2]); err != nil {
+				return fmt.Errorf("pose error: %w", err)
+			}
+			time.Sleep(2 * time.Second)
+			found, err = s.detectAndGreet(ctx)
+			if err != nil {
+				return err
+			}
+			if found {
+				return nil
 			}
 		}
 
-		_, err = s.base.DoCommand(ctx, map[string]interface{}{"pose": map[string]interface{}{"pitch_deg": -60, "roll_deg": 0, "yaw_deg": 0}})
-		if err != nil {
-			return fmt.Errorf("spin error: %w", err)
+		if err := s.setPose(ctx, 0, 0, 0); err != nil {
+			return fmt.Errorf("pose error: %w", err)
 		}
-		time.Sleep(2 * time.Second)
-		detections, err = s.peopleVis.DetectionsFromCamera(ctx, s.cfg.Camera, nil)
-		if err != nil {
-			return fmt.Errorf("error getting detections: %w", err)
-		}
-		if len(detections) > 0 {
-			who := detections[0].Label()
-			if who != "" && who != "unknown" {
-				return s.sayWithGesture(ctx, who)
-			}
-		}
-
-		_, err = s.base.DoCommand(ctx, map[string]interface{}{"pose": map[string]interface{}{"pitch_deg": -60, "roll_deg": 0, "yaw_deg": 20}})
-		if err != nil {
-			return fmt.Errorf("spin error: %w", err)
-		}
-		time.Sleep(2 * time.Second)
-		detections, err = s.peopleVis.DetectionsFromCamera(ctx, s.cfg.Camera, nil)
-		if err != nil {
-			return fmt.Errorf("error getting detections: %w", err)
-		}
-		if len(detections) > 0 {
-			who := detections[0].Label()
-			if who != "" && who != "unknown" {
-				return s.sayWithGesture(ctx, who)
-			}
-		}
-
-		_, err = s.base.DoCommand(ctx, map[string]interface{}{"pose": map[string]interface{}{"pitch_deg": -60, "roll_deg": 0, "yaw_deg": -20}})
-		if err != nil {
-			return fmt.Errorf("spin error: %w", err)
-		}
-		time.Sleep(2 * time.Second)
-		detections, err = s.peopleVis.DetectionsFromCamera(ctx, s.cfg.Camera, nil)
-		if err != nil {
-			return fmt.Errorf("error getting detections: %w", err)
-		}
-		if len(detections) > 0 {
-			who := detections[0].Label()
-			if who != "" && who != "unknown" {
-				return s.sayWithGesture(ctx, who)
-			}
-		}
-
-		_, err = s.base.DoCommand(ctx, map[string]interface{}{"pose": map[string]interface{}{"pitch_deg": 0, "roll_deg": 0, "yaw_deg": 0}})
-		if err != nil {
-			return fmt.Errorf("spin error: %w", err)
-		}
-
 		time.Sleep(2 * time.Second)
 		spinCount--
 		if spinCount == 0 {
@@ -460,26 +379,19 @@ func (s *ttsCoodinatorService) greetFirstSeen(ctx context.Context) error {
 }
 
 func (s *ttsCoodinatorService) sayWithGesture(ctx context.Context, who string) error {
-	err := s.say(ctx, fmt.Sprintf("hi %s", who))
-	if err != nil {
+	if err := s.say(ctx, fmt.Sprintf("hi %s", who)); err != nil {
 		return err
 	}
 
 	time.Sleep(2 * time.Second)
 
-	imgs, _, err := s.camera.Images(ctx, []string{}, nil)
-	if err != nil {
-		s.logger.Error(err)
-		return err
-	}
-	img, err := imgs[0].Image(ctx)
+	img, err := s.getCameraImage(ctx)
 	if err != nil {
 		s.logger.Error(err)
 		return err
 	}
 
-	_, err = s.checkGesture(ctx, img)
-	if err != nil {
+	if _, err = s.checkGesture(ctx, img); err != nil {
 		s.logger.Error(err)
 		return err
 	}
@@ -510,11 +422,9 @@ func (s *ttsCoodinatorService) audio_thread(ctx context.Context) {
 				if err := s.greetFirstSeen(searchCtx); err != nil && searchCtx.Err() == nil {
 					s.logger.Error(err)
 				}
-				_, err = s.base.DoCommand(ctx, map[string]interface{}{"pose": map[string]interface{}{"pitch_deg": 0, "roll_deg": 0, "yaw_deg": 0}})
-				if err != nil {
+				if err := s.setPose(ctx, 0, 0, 0); err != nil {
 					s.logger.Error(err)
 				}
-
 			}
 		}
 	}
@@ -547,10 +457,8 @@ func (s *ttsCoodinatorService) Name() resource.Name {
 }
 
 func (s *ttsCoodinatorService) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
-	say, ok := cmd["say_this"].(string)
-	if ok {
-		err := s.say(ctx, say)
-		if err != nil {
+	if say, ok := cmd["say_this"].(string); ok {
+		if err := s.say(ctx, say); err != nil {
 			return nil, err
 		}
 	}
@@ -559,16 +467,13 @@ func (s *ttsCoodinatorService) DoCommand(ctx context.Context, cmd map[string]int
 		s.cancelSearch()
 	}
 
-	name, ok := cmd["find"].(string)
-	if ok {
+	if name, ok := cmd["find"].(string); ok {
 		searchCtx := s.startSearch(ctx)
-		err := s.findSomeone(searchCtx, name)
-		if err != nil && searchCtx.Err() == nil {
+		if err := s.findSomeone(searchCtx, name); err != nil && searchCtx.Err() == nil {
 			return nil, err
 		}
 		if searchCtx.Err() == nil {
-			speech := fmt.Sprintf("hi %s", name)
-			if err := s.say(ctx, speech); err != nil {
+			if err := s.say(ctx, fmt.Sprintf("hi %s", name)); err != nil {
 				return nil, err
 			}
 		}
