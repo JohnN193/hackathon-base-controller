@@ -178,7 +178,7 @@ func NewTTSCoordinatorService(ctx context.Context, deps resource.Dependencies, n
 		filter_mic: filtermic,
 	}
 
-	s.workers = vutils.NewBackgroundStoppableWorkers(s.control_thread, s.audio_thread)
+	s.workers = vutils.NewBackgroundStoppableWorkers(s.audio_thread)
 
 	return s, nil
 }
@@ -249,6 +249,14 @@ func (s *ttsCoodinatorService) checkGesture(ctx context.Context, img image.Image
 		return false, fmt.Errorf("gesture classification error: %w", err)
 	}
 	for _, c := range classifications {
+		if c.Label() == "Pointing_Down" {
+			_, err := s.base.DoCommand(ctx, map[string]interface{}{"sit": true})
+			if err != nil {
+				return false, fmt.Errorf("base DoCommand 'hello' error: %w", err)
+			}
+			s.logger.Info("Pointing_down detected — sent 'sit' to base")
+			return true, nil
+		}
 		if c.Label() == "Open_Palm" {
 			_, err := s.base.DoCommand(ctx, map[string]interface{}{"hello": true})
 			if err != nil {
@@ -370,11 +378,12 @@ func (s *ttsCoodinatorService) greetFirstSeen(ctx context.Context) error {
 	spinIncrement := 30
 	spinCount := 360 / spinIncrement
 	for {
-		err := s.base.Spin(ctx, float64(spinIncrement), 60, nil)
+		s.logger.Infof("spin increment: %d ", spinIncrement)
+		err := s.base.Spin(ctx, float64(spinIncrement*2), 60, nil)
 		if err != nil {
 			return fmt.Errorf("spin error: %w", err)
 		}
-		time.Sleep(1 * time.Second)
+		time.Sleep(2 * time.Second)
 
 		detections, err := s.peopleVis.DetectionsFromCamera(ctx, s.cfg.Camera, nil)
 		if err != nil {
@@ -383,7 +392,7 @@ func (s *ttsCoodinatorService) greetFirstSeen(ctx context.Context) error {
 		if len(detections) > 0 {
 			who := detections[0].Label()
 			if who != "" && who != "unknown" {
-				return s.say(ctx, fmt.Sprintf("hi %s", who))
+				return s.sayWithGesture(ctx, who)
 			}
 		}
 
@@ -391,7 +400,7 @@ func (s *ttsCoodinatorService) greetFirstSeen(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("spin error: %w", err)
 		}
-		time.Sleep(1 * time.Second)
+		time.Sleep(2 * time.Second)
 		detections, err = s.peopleVis.DetectionsFromCamera(ctx, s.cfg.Camera, nil)
 		if err != nil {
 			return fmt.Errorf("error getting detections: %w", err)
@@ -399,15 +408,15 @@ func (s *ttsCoodinatorService) greetFirstSeen(ctx context.Context) error {
 		if len(detections) > 0 {
 			who := detections[0].Label()
 			if who != "" && who != "unknown" {
-				return s.say(ctx, fmt.Sprintf("hi %s", who))
+				return s.sayWithGesture(ctx, who)
 			}
 		}
 
-		_, err = s.base.DoCommand(ctx, map[string]interface{}{"pose": map[string]interface{}{"pitch_deg": -60, "roll_deg": 0, "yaw_deg": 25}})
+		_, err = s.base.DoCommand(ctx, map[string]interface{}{"pose": map[string]interface{}{"pitch_deg": -60, "roll_deg": 0, "yaw_deg": 20}})
 		if err != nil {
 			return fmt.Errorf("spin error: %w", err)
 		}
-		time.Sleep(1 * time.Second)
+		time.Sleep(2 * time.Second)
 		detections, err = s.peopleVis.DetectionsFromCamera(ctx, s.cfg.Camera, nil)
 		if err != nil {
 			return fmt.Errorf("error getting detections: %w", err)
@@ -415,15 +424,15 @@ func (s *ttsCoodinatorService) greetFirstSeen(ctx context.Context) error {
 		if len(detections) > 0 {
 			who := detections[0].Label()
 			if who != "" && who != "unknown" {
-				return s.say(ctx, fmt.Sprintf("hi %s", who))
+				return s.sayWithGesture(ctx, who)
 			}
 		}
 
-		_, err = s.base.DoCommand(ctx, map[string]interface{}{"pose": map[string]interface{}{"pitch_deg": -60, "roll_deg": 0, "yaw_deg": -25}})
+		_, err = s.base.DoCommand(ctx, map[string]interface{}{"pose": map[string]interface{}{"pitch_deg": -60, "roll_deg": 0, "yaw_deg": -20}})
 		if err != nil {
 			return fmt.Errorf("spin error: %w", err)
 		}
-		time.Sleep(1 * time.Second)
+		time.Sleep(2 * time.Second)
 		detections, err = s.peopleVis.DetectionsFromCamera(ctx, s.cfg.Camera, nil)
 		if err != nil {
 			return fmt.Errorf("error getting detections: %w", err)
@@ -431,7 +440,7 @@ func (s *ttsCoodinatorService) greetFirstSeen(ctx context.Context) error {
 		if len(detections) > 0 {
 			who := detections[0].Label()
 			if who != "" && who != "unknown" {
-				return s.say(ctx, fmt.Sprintf("hi %s", who))
+				return s.sayWithGesture(ctx, who)
 			}
 		}
 
@@ -439,7 +448,8 @@ func (s *ttsCoodinatorService) greetFirstSeen(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("spin error: %w", err)
 		}
-		time.Sleep(1 * time.Second)
+
+		time.Sleep(2 * time.Second)
 		spinCount--
 		if spinCount == 0 {
 			break
@@ -447,6 +457,34 @@ func (s *ttsCoodinatorService) greetFirstSeen(ctx context.Context) error {
 	}
 
 	return s.say(ctx, "could not find you, sorry!")
+}
+
+func (s *ttsCoodinatorService) sayWithGesture(ctx context.Context, who string) error {
+	err := s.say(ctx, fmt.Sprintf("hi %s", who))
+	if err != nil {
+		return err
+	}
+
+	time.Sleep(2 * time.Second)
+
+	imgs, _, err := s.camera.Images(ctx, []string{}, nil)
+	if err != nil {
+		s.logger.Error(err)
+		return err
+	}
+	img, err := imgs[0].Image(ctx)
+	if err != nil {
+		s.logger.Error(err)
+		return err
+	}
+
+	_, err = s.checkGesture(ctx, img)
+	if err != nil {
+		s.logger.Error(err)
+		return err
+	}
+
+	return nil
 }
 
 func (s *ttsCoodinatorService) audio_thread(ctx context.Context) {
@@ -471,8 +509,12 @@ func (s *ttsCoodinatorService) audio_thread(ctx context.Context) {
 				searchCtx := s.startSearch(ctx)
 				if err := s.greetFirstSeen(searchCtx); err != nil && searchCtx.Err() == nil {
 					s.logger.Error(err)
-
 				}
+				_, err = s.base.DoCommand(ctx, map[string]interface{}{"pose": map[string]interface{}{"pitch_deg": 0, "roll_deg": 0, "yaw_deg": 0}})
+				if err != nil {
+					s.logger.Error(err)
+				}
+
 			}
 		}
 	}
