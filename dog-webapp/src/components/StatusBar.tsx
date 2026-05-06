@@ -1,7 +1,9 @@
 import { useRobotContext } from "../context/RobotContext";
+import { useBattery } from "../hooks/useBattery";
 
 export function StatusBar() {
-  const { status, error, connect, disconnect } = useRobotContext();
+  const { status, error, connect, disconnect, clients } = useRobotContext();
+  const batteryPct = useBattery(clients);
 
   return (
     <header className="flex items-center justify-between px-4 py-2 bg-panel border-b border-panel-border">
@@ -22,6 +24,9 @@ export function StatusBar() {
           <span className="text-sm text-gray-400 capitalize">{status}</span>
         </div>
         {error && <span className="text-sm text-danger">{error}</span>}
+        {batteryPct !== null && (
+          <span className="text-sm text-gray-400">{batteryPct}% battery</span>
+        )}
       </div>
       <div>
         {status === "disconnected" || status === "error" ? (

@@ -11,7 +11,7 @@ export function SpeechPanel() {
 
     setSpeaking(true);
     try {
-      await clients.ttsCoordinator.doCommand({ say_this: text.trim() });
+      await clients.speaker.doCommand({ speak: text.trim() });
       setText("");
     } catch (err) {
       console.error("TTS failed:", err);

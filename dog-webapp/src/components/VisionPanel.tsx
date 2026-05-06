@@ -42,10 +42,10 @@ export function VisionPanel() {
       }
 
       try {
-        const gestureDetections = await clients.gestureVision.getDetectionsFromCamera(COMPONENTS.CAMERA);
-        setWaveDetected(gestureDetections.some((d) => d.confidence && d.confidence > 0.5));
+        const gestureClassifications = await clients.gestureVision.getClassificationsFromCamera(COMPONENTS.CAMERA, 10);
+        setWaveDetected(gestureClassifications.some((c) => c.className === "Open_Palm" && c.confidence && c.confidence > 0.5));
       } catch {
-        // Gesture service may not always respond
+        // gesture service may not always respond
       }
     };
 

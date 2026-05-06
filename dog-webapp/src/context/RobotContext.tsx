@@ -9,6 +9,7 @@ interface RobotContextValue {
   disconnect: () => void;
 }
 
+
 const RobotContext = createContext<RobotContextValue | null>(null);
 
 export function RobotProvider({ children }: { children: ReactNode }) {

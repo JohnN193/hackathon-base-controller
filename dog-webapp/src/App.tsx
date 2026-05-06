@@ -4,6 +4,7 @@ import { MovementControl } from "./components/MovementControl";
 import { TrickButtons } from "./components/TrickButtons";
 import { SpeechPanel } from "./components/SpeechPanel";
 import { VisionPanel } from "./components/VisionPanel";
+import { MovementSensorPanel } from "./components/MovementSensorPanel";
 import { GamepadStatus } from "./components/GamepadStatus";
 import { useRobotContext } from "./context/RobotContext";
 
@@ -37,9 +38,10 @@ function App() {
               <CameraStream />
             </div>
 
-            {/* Right sidebar: Vision */}
+            {/* Right sidebar: Vision + Sensor */}
             <div className="bg-panel overflow-y-auto">
               <VisionPanel />
+              <MovementSensorPanel />
             </div>
           </div>
 

@@ -6,6 +6,8 @@ export const COMPONENTS = {
   MICROPHONE: "audio_in-1",
   LOCAL_CONTROLLER: "localController",
   WEB_GAMEPAD: "WebGamepad",
+  POWER_SENSOR: "battery-sensor",
+  MOVEMENT_SENSOR: "movement_sensor",
 } as const;
 
 // Service names from the Viam robot config
@@ -22,6 +24,7 @@ export interface Trick {
   id: string;
   label: string;
   command?: Record<string, unknown>;
+  target?: "base" | "speaker";
 }
 
 export const TRICKS: readonly Trick[] = [
@@ -37,8 +40,9 @@ export const TRICKS: readonly Trick[] = [
   {
     id: "look_up",
     label: "Look Up",
-    command: { pose_delta: { roll_deg: 0, pitch_deg: -60, yaw_deg: 0 } },
+    command: { pose: { roll_deg: 0, pitch_deg: -60, yaw_deg: 0 } },
   },
+  { id: "bark", label: "Bark", target: "speaker" },
 ];
 
 // Movement defaults (matching dog-controller config)

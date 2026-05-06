@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useRobotContext } from "../context/RobotContext";
 import { MOVEMENT } from "../lib/robot-config";
 
+const POSE_STEP_DEG = 15;
+
 type Direction = "up" | "down" | "left" | "right";
 
 export function MovementControl() {
@@ -10,6 +12,11 @@ export function MovementControl() {
   const [maxAngular, setMaxAngular] = useState<number>(MOVEMENT.DEFAULT_ANGULAR_DEG_PER_SEC);
   const [activeKeys, setActiveKeys] = useState<Set<Direction>>(new Set());
   const activeRef = useRef<Set<Direction>>(new Set());
+  const [strafeMode, setStrafeMode] = useState(false);
+  const [shiftHeld, setShiftHeld] = useState(false);
+  const effectiveStrafeMode = strafeMode !== shiftHeld; // XOR: shift toggles the base mode
+  const effectiveStrafeModeRef = useRef(effectiveStrafeMode);
+  effectiveStrafeModeRef.current = effectiveStrafeMode;
 
   const addDirection = useCallback((dir: Direction) => {
     activeRef.current.add(dir);
@@ -31,6 +38,7 @@ export function MovementControl() {
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Shift") { setShiftHeld(true); return; }
       const dir = keyMap[e.key];
       if (dir) {
         e.preventDefault();
@@ -39,6 +47,7 @@ export function MovementControl() {
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === "Shift") { setShiftHeld(false); return; }
       const dir = keyMap[e.key];
       if (dir) {
         e.preventDefault();
@@ -63,10 +72,11 @@ export function MovementControl() {
     const id = setInterval(async () => {
       const keys = activeRef.current;
       const forward = keys.has("up") ? 1 : keys.has("down") ? -1 : 0;
-      const turn = keys.has("left") ? 1 : keys.has("right") ? -1 : 0;
+      const lateral = keys.has("left") ? 1 : keys.has("right") ? -1 : 0;
+      const isStrafe = effectiveStrafeModeRef.current;
 
       try {
-        if (forward === 0 && turn === 0) {
+        if (forward === 0 && lateral === 0) {
           if (!wasStopped) {
             await clients.base.stop();
             wasStopped = true;
@@ -74,8 +84,8 @@ export function MovementControl() {
         } else {
           wasStopped = false;
           await clients.base.setVelocity(
-            { x: 0, y: forward * maxLinear, z: 0 },
-            { x: 0, y: 0, z: turn * maxAngular }
+            { x: isStrafe ? lateral * maxLinear : 0, y: forward * maxLinear, z: 0 },
+            { x: 0, y: 0, z: isStrafe ? 0 : lateral * maxAngular }
           );
         }
       } catch {
@@ -104,6 +114,23 @@ export function MovementControl() {
     <div className="flex flex-col gap-3 p-3">
       <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">Movement</h2>
 
+      {/* Strafe/Turn toggle */}
+      <div className="flex items-center gap-1 self-center">
+        <button
+          onClick={() => setStrafeMode(false)}
+          className={`px-3 py-1 text-xs rounded-l transition-colors ${!strafeMode ? "bg-accent text-white" : "bg-slate-700 text-gray-400 hover:bg-slate-600"}`}
+        >
+          Turn
+        </button>
+        <button
+          onClick={() => setStrafeMode(true)}
+          className={`px-3 py-1 text-xs rounded-r transition-colors ${strafeMode ? "bg-accent text-white" : "bg-slate-700 text-gray-400 hover:bg-slate-600"}`}
+        >
+          Strafe
+        </button>
+        {shiftHeld && <span className="text-xs text-gray-500 ml-1">(shift)</span>}
+      </div>
+
       {/* Arrow buttons */}
       <div className="grid grid-cols-3 grid-rows-2 gap-1 w-36 mx-auto">
         {buttons.map(({ dir, label, gridArea }) => (
@@ -123,6 +150,28 @@ export function MovementControl() {
             {label}
           </button>
         ))}
+      </div>
+
+      {/* Pose control */}
+      <div>
+        <h3 className="text-xs text-gray-500 mb-2">Pose</h3>
+        <div className="flex flex-col gap-1">
+          {(["pitch", "roll", "yaw"] as const).map((axis) => (
+            <div key={axis} className="flex items-center gap-2">
+              <span className="text-xs text-gray-400 w-8 capitalize">{axis}</span>
+              <button
+                onClick={() => clients?.base.doCommand({ pose_delta: { roll_deg: axis === "roll" ? -POSE_STEP_DEG : 0, pitch_deg: axis === "pitch" ? -POSE_STEP_DEG : 0, yaw_deg: axis === "yaw" ? -POSE_STEP_DEG : 0 } })}
+                disabled={!clients}
+                className="px-3 py-1 text-sm bg-slate-700 hover:bg-slate-600 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+              >−</button>
+              <button
+                onClick={() => clients?.base.doCommand({ pose_delta: { roll_deg: axis === "roll" ? POSE_STEP_DEG : 0, pitch_deg: axis === "pitch" ? POSE_STEP_DEG : 0, yaw_deg: axis === "yaw" ? POSE_STEP_DEG : 0 } })}
+                disabled={!clients}
+                className="px-3 py-1 text-sm bg-slate-700 hover:bg-slate-600 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+              >+</button>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Speed sliders */}

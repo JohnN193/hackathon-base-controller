@@ -8,8 +8,10 @@ export interface RobotClients {
   camera: VIAM.CameraClient;
   faceVision: VIAM.VisionClient;
   gestureVision: VIAM.VisionClient;
-  ttsCoordinator: VIAM.GenericServiceClient;
+  speaker: VIAM.AudioOutClient;
   webGamepad: VIAM.InputControllerClient;
+  powerSensor: VIAM.PowerSensorClient;
+  movementSensor: VIAM.MovementSensorClient;
 }
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
@@ -19,22 +21,14 @@ export function useRobot() {
   const [clients, setClients] = useState<RobotClients | null>(null);
   const [error, setError] = useState<string | null>(null);
   const machineRef = useRef<VIAM.RobotClient | null>(null);
-  const dog1Ref = useRef<VIAM.RobotClient | null>(null);
 
   const connect = useCallback(async () => {
     const host = import.meta.env.VITE_VIAM_HOST;
-    const dog1Host = import.meta.env.VITE_VIAM_DOG1_HOST;
     const apiKey = import.meta.env.VITE_VIAM_API_KEY;
     const apiKeyId = import.meta.env.VITE_VIAM_API_KEY_ID;
 
     if (!host || !apiKey || !apiKeyId) {
       setError("Missing VITE_VIAM_HOST, VITE_VIAM_API_KEY, or VITE_VIAM_API_KEY_ID in .env");
-      setStatus("error");
-      return;
-    }
-
-    if (!dog1Host) {
-      setError("Missing VITE_VIAM_DOG1_HOST in .env");
       setStatus("error");
       return;
     }
@@ -49,21 +43,13 @@ export function useRobot() {
     };
 
     try {
-      const [machine, dog1] = await Promise.all([
-        VIAM.createRobotClient({
-          host,
-          credentials: creds,
-          signalingAddress: "https://app.viam.com:443",
-        }),
-        VIAM.createRobotClient({
-          host: dog1Host,
-          credentials: creds,
-          signalingAddress: "https://app.viam.com:443",
-        }),
-      ]);
+      const machine = await VIAM.createRobotClient({
+        host,
+        credentials: creds,
+        signalingAddress: "https://app.viam.com:443",
+      });
 
       machineRef.current = machine;
-      dog1Ref.current = dog1;
 
       const robotClients: RobotClients = {
         machine,
@@ -71,8 +57,10 @@ export function useRobot() {
         camera: new VIAM.CameraClient(machine, COMPONENTS.CAMERA),
         faceVision: new VIAM.VisionClient(machine, SERVICES.FACE_ID),
         gestureVision: new VIAM.VisionClient(machine, SERVICES.GESTURE),
-        ttsCoordinator: new VIAM.GenericServiceClient(dog1, SERVICES.TTS_COORDINATOR),
+        speaker: new VIAM.AudioOutClient(machine, COMPONENTS.SPEAKER),
         webGamepad: new VIAM.InputControllerClient(machine, COMPONENTS.WEB_GAMEPAD),
+        powerSensor: new VIAM.PowerSensorClient(machine, COMPONENTS.POWER_SENSOR),
+        movementSensor: new VIAM.MovementSensorClient(machine, COMPONENTS.MOVEMENT_SENSOR),
       };
 
       setClients(robotClients);
@@ -88,21 +76,32 @@ export function useRobot() {
       machineRef.current.disconnect();
       machineRef.current = null;
     }
-    if (dog1Ref.current) {
-      dog1Ref.current.disconnect();
-      dog1Ref.current = null;
-    }
     setClients(null);
     setStatus("disconnected");
   }, []);
+
+  // Heartbeat: detect connection loss
+  useEffect(() => {
+    if (!machineRef.current) return;
+
+    const id = setInterval(async () => {
+      try {
+        await machineRef.current!.resourceNames();
+      } catch {
+        setError("Connection lost");
+        setStatus("error");
+        setClients(null);
+        machineRef.current = null;
+      }
+    }, 5000);
+
+    return () => clearInterval(id);
+  }, [clients]);
 
   useEffect(() => {
     return () => {
       if (machineRef.current) {
         machineRef.current.disconnect();
-      }
-      if (dog1Ref.current) {
-        dog1Ref.current.disconnect();
       }
     };
   }, []);

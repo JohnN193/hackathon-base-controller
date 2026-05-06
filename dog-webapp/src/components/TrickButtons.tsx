@@ -11,7 +11,12 @@ export function TrickButtons() {
 
     setActiveTrick(trick.id);
     try {
-      await clients.base.doCommand(trick.command ?? { [trick.id]: "" });
+      const cmd = trick.command ?? { [trick.id]: "" };
+      if (trick.target === "speaker") {
+        await clients.speaker.doCommand(cmd);
+      } else {
+        await clients.base.doCommand(cmd);
+      }
     } catch (err) {
       console.error(`Trick "${trick.id}" failed:`, err);
     } finally {
